@@ -1,0 +1,7 @@
+name = "api-worker-proxy"
+main = "worker.js"
+compatibility_date = "2026-06-22"
+workers_dev = true
+
+[vars]
+ALLOWED_HOSTS = ""
