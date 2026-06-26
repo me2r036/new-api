@@ -31,6 +31,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiDiscord } from 'react-icons/si'
 import { toast } from 'sonner'
+import { IconGoogle } from '@/assets/brand-icons'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -74,6 +75,7 @@ interface BindingItem {
 interface StatusInfo {
   github_oauth?: boolean
   discord_oauth?: boolean
+  google_oauth?: boolean
   oidc_enabled?: boolean
   wechat_login?: boolean
   telegram_oauth?: boolean
@@ -112,6 +114,13 @@ const BUILTIN_BINDINGS: ReadonlyArray<{
     label: 'Discord',
     icon: <SiDiscord className='h-4 w-4' />,
     statusKey: 'discord_oauth',
+  },
+  {
+    key: 'google_id',
+    field: 'google_id',
+    label: 'Google',
+    icon: <IconGoogle className='h-4 w-4' />,
+    statusKey: 'google_oauth',
   },
   {
     key: 'wechat_id',

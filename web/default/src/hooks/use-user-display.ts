@@ -43,11 +43,14 @@ export function useUserDisplay(user: AuthUser | null | undefined) {
     // Secondary text: first available identifier
     const secondaryText = (() => {
       if (user.email) return user.email
-      if (user.github_id) return `GitHub ID: ${user.github_id}`
-      if (user.oidc_id) return `OIDC ID: ${user.oidc_id}`
-      if (user.wechat_id) return `WeChat ID: ${user.wechat_id}`
-      if (user.telegram_id) return `Telegram ID: ${user.telegram_id}`
-      if (user.linux_do_id) return `LinuxDO ID: ${user.linux_do_id}`
+      if (user.google_id) return t('Google ID: {{id}}', { id: user.google_id })
+      if (user.github_id) return t('GitHub ID: {{id}}', { id: user.github_id })
+      if (user.oidc_id) return t('OIDC ID: {{id}}', { id: user.oidc_id })
+      if (user.wechat_id) return t('WeChat ID: {{id}}', { id: user.wechat_id })
+      if (user.telegram_id)
+        return t('Telegram ID: {{id}}', { id: user.telegram_id })
+      if (user.linux_do_id)
+        return t('LinuxDO ID: {{id}}', { id: user.linux_do_id })
       if (user.username) return user.username
       if (user.display_name) return user.display_name
       return ''

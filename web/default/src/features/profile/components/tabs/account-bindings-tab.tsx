@@ -21,12 +21,13 @@ import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux } from 'react-icons/si'
 import { toast } from 'sonner'
-import { IconDiscord } from '@/assets/brand-icons'
+import { IconDiscord, IconGoogle } from '@/assets/brand-icons'
 import {
   handleGitHubOAuth,
-  handleOIDCOAuth,
   handleDiscordOAuth,
+  handleGoogleOAuth,
   handleLinuxDOOAuth,
+  handleOIDCOAuth,
 } from '@/lib/oauth'
 import { useDialogs } from '@/hooks/use-dialog'
 import { useStatus } from '@/hooks/use-status'
@@ -202,6 +203,23 @@ export function AccountBindingsTab({
         onBind: () => {
           if (status?.discord_client_id) {
             handleDiscordOAuth(status.discord_client_id)
+          }
+        },
+      },
+      {
+        id: 'google',
+        label: t('Google'),
+        icon: IconGoogle,
+        value: (profile as unknown as Record<string, unknown>).google_id as
+          | string
+          | undefined,
+        isBound: Boolean(
+          (profile as unknown as Record<string, unknown>).google_id
+        ),
+        isEnabled: status?.google_oauth || false,
+        onBind: () => {
+          if (status?.google_client_id) {
+            handleGoogleOAuth(status.google_client_id)
           }
         },
       },

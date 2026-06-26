@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { Loader2, Send, Shield, UserRound, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconDiscord, IconGoogle } from '@/assets/brand-icons'
 import { SiGithub, SiLinux, SiWechat } from 'react-icons/si'
 import { AuthLayout } from '../auth-layout'
 
@@ -39,6 +40,8 @@ const providerDictionary: Record<string, ProviderMeta> = {
       <SiGithub className={props.className} focusable='false' />
     ),
   },
+  discord: { label: 'Discord', Icon: IconDiscord },
+  google: { label: 'Google', Icon: IconGoogle },
   oidc: { label: 'OIDC', Icon: Shield },
   linuxdo: {
     label: 'LinuxDO',
