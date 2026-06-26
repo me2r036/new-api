@@ -296,6 +296,12 @@ export type BillingSettings = {
   CreemWebhookSecret: string
   CreemTestMode: boolean
   CreemProducts: string
+  NowPaymentsEnabled: boolean
+  NowPaymentsApiKey: string
+  NowPaymentsIPNSecret: string
+  NowPaymentsCurrency: string
+  NowPaymentsCurrencies: string
+  NowPaymentsMinTopUp: number
   WaffoEnabled: boolean
   WaffoApiKey: string
   WaffoPrivateKey: string

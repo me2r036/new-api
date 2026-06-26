@@ -78,6 +78,15 @@ const TopUp = () => {
   const [enableStripeTopUp, setEnableStripeTopUp] = useState(
     statusState?.status?.enable_stripe_topup || false,
   );
+  const [enableNowPaymentsTopUp, setEnableNowPaymentsTopUp] = useState(
+    statusState?.status?.enable_nowpayments_topup || false,
+  );
+  const [nowPaymentsMinTopUp, setNowPaymentsMinTopUp] = useState(
+    statusState?.status?.nowpayments_min_topup || 1,
+  );
+  const [nowPaymentsCurrencies, setNowPaymentsCurrencies] = useState(
+    statusState?.status?.nowpayments_currencies || ['usdtbsc'],
+  );
   const [statusLoading, setStatusLoading] = useState(true);
 
   // Creem 相关状态
@@ -100,6 +109,7 @@ const TopUp = () => {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [payMethods, setPayMethods] = useState([]);
+  const [nowPaymentsEstimate, setNowPaymentsEstimate] = useState(null);
 
   const affFetchedRef = useRef(false);
 
@@ -133,6 +143,17 @@ const TopUp = () => {
 
   const confirmPayMethods = [
     ...payMethods,
+    ...(enableNowPaymentsTopUp
+      ? (nowPaymentsCurrencies.length > 0
+          ? nowPaymentsCurrencies
+          : ['usdtbsc']
+        ).map((currency) => ({
+          name: `NOWPayments ${String(currency).toUpperCase()}`,
+          type: `nowpayments:${currency}`,
+          min_topup: nowPaymentsMinTopUp,
+          color: 'rgba(var(--semi-green-5), 1)',
+        }))
+      : []),
     ...waffoPayMethods.map((method, index) => ({
       ...method,
       type: `waffo:${index}`,
@@ -151,9 +172,23 @@ const TopUp = () => {
       : minTopUp;
   };
 
+  const isNowPaymentsPayWay = (payment) =>
+    payment === 'nowpayments' ||
+    (typeof payment === 'string' && payment.startsWith('nowpayments:'));
+
+  const getNowPaymentsPayCurrency = (payment) => {
+    if (typeof payment === 'string' && payment.startsWith('nowpayments:')) {
+      return payment.split(':')[1] || nowPaymentsCurrencies[0] || 'usdtbsc';
+    }
+    return nowPaymentsCurrencies[0] || 'usdtbsc';
+  };
+
   const requestAmountByPayment = async (payment, value) => {
     if (payment === 'stripe') {
       return getStripeAmount(value);
+    }
+    if (isNowPaymentsPayWay(payment)) {
+      return getNowPaymentsAmount(value, getNowPaymentsPayCurrency(payment));
     }
     if (payment === 'waffo_pancake') {
       return getWaffoPancakeAmount(value);
@@ -214,6 +249,11 @@ const TopUp = () => {
         showError(t('管理员未开启Stripe充值！'));
         return;
       }
+    } else if (isNowPaymentsPayWay(payment)) {
+      if (!enableNowPaymentsTopUp) {
+        showError(t('管理员未开启 NOWPayments 充值！'));
+        return;
+      }
     } else if (payment === 'waffo_pancake') {
       if (!enableWaffoPancakeTopUp) {
         showError(t('管理员未开启 Waffo Pancake 充值！'));
@@ -250,6 +290,17 @@ const TopUp = () => {
   };
 
   const onlineTopUp = async () => {
+    if (isNowPaymentsPayWay(payWay)) {
+      setConfirmLoading(true);
+      try {
+        await nowPaymentsTopUp();
+      } finally {
+        setOpen(false);
+        setConfirmLoading(false);
+      }
+      return;
+    }
+
     if (payWay === 'waffo_pancake') {
       setConfirmLoading(true);
       try {
@@ -425,6 +476,80 @@ const TopUp = () => {
       showError(t('支付请求失败'));
     } finally {
       setPaymentLoading(false);
+    }
+  };
+
+  const nowPaymentsTopUp = async () => {
+    const minTopUpValue = Number(nowPaymentsMinTopUp || 1);
+    if (topUpCount < minTopUpValue) {
+      showError(t('充值数量不能小于') + minTopUpValue);
+      return;
+    }
+
+    setPaymentLoading(true);
+    try {
+      const res = await API.post('/api/user/nowpayments/pay', {
+        amount: parseInt(topUpCount),
+        pay_currency: getNowPaymentsPayCurrency(payWay),
+      });
+      if (res !== undefined) {
+        const { message, data } = res.data;
+        if (message === 'success') {
+          const paymentUrl = data?.payment_url || '';
+          if (paymentUrl && isSafeHttpCheckoutUrl(paymentUrl)) {
+            window.location.href = paymentUrl;
+          } else if (paymentUrl) {
+            showError(t('支付跳转地址不安全'));
+          } else {
+            showError(t('支付请求失败'));
+          }
+        } else {
+          const errorMsg =
+            typeof data === 'string' ? data : message || t('支付请求失败');
+          showError(errorMsg);
+        }
+      } else {
+        showError(res);
+      }
+    } catch (e) {
+      showError(t('支付请求失败'));
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const getNowPaymentsAmount = async (value, payCurrency) => {
+    if (value === undefined) {
+      value = topUpCount;
+    }
+    setAmountLoading(true);
+    try {
+      const res = await API.post('/api/user/nowpayments/amount', {
+        amount: parseInt(value),
+        pay_currency: payCurrency || getNowPaymentsPayCurrency(payWay),
+      });
+      if (res !== undefined) {
+        const { message, data } = res.data;
+        if (message === 'success') {
+          if (data && typeof data === 'object') {
+            setNowPaymentsEstimate(data);
+            setAmount(parseFloat(data.pay_amount || data.price_amount || '0'));
+          } else {
+            setNowPaymentsEstimate(null);
+            setAmount(parseFloat(data));
+          }
+        } else {
+          setNowPaymentsEstimate(null);
+          setAmount(0);
+          Toast.error({ content: '错误：' + data, id: 'getAmount' });
+        }
+      } else {
+        showError(res);
+      }
+    } catch (err) {
+      // amount fetch failed silently
+    } finally {
+      setAmountLoading(false);
     }
   };
 
@@ -612,7 +737,9 @@ const TopUp = () => {
           if (payMethods && payMethods.length > 0) {
             // 检查name和type是否为空
             payMethods = payMethods.filter((method) => {
-              return method.name && method.type;
+              return (
+                method.name && method.type && method.type !== 'nowpayments'
+              );
             });
             // 如果没有color，则设置默认颜色
             payMethods = payMethods.map((method) => {
@@ -657,6 +784,8 @@ const TopUp = () => {
           const enableStripeTopUp = data.enable_stripe_topup || false;
           const enableOnlineTopUp = data.enable_online_topup || false;
           const enableCreemTopUp = data.enable_creem_topup || false;
+          const enableNowPaymentsTopUp =
+            data.enable_nowpayments_topup || false;
           const enableWaffoTopUp = data.enable_waffo_topup || false;
           const enableWaffoPancakeTopUp =
             data.enable_waffo_pancake_topup || false;
@@ -664,6 +793,8 @@ const TopUp = () => {
             ? data.min_topup
             : enableStripeTopUp
               ? data.stripe_min_topup
+              : enableNowPaymentsTopUp
+                ? data.nowpayments_min_topup
               : enableWaffoTopUp
                 ? data.waffo_min_topup
                 : enableWaffoPancakeTopUp
@@ -672,6 +803,14 @@ const TopUp = () => {
           setEnableOnlineTopUp(enableOnlineTopUp);
           setEnableStripeTopUp(enableStripeTopUp);
           setEnableCreemTopUp(enableCreemTopUp);
+          setEnableNowPaymentsTopUp(enableNowPaymentsTopUp);
+          setNowPaymentsMinTopUp(data.nowpayments_min_topup || 1);
+          setNowPaymentsCurrencies(
+            Array.isArray(data.nowpayments_currencies) &&
+              data.nowpayments_currencies.length > 0
+              ? data.nowpayments_currencies
+              : ['usdtbsc'],
+          );
           setEnableWaffoTopUp(enableWaffoTopUp);
           setWaffoPayMethods(data.waffo_pay_methods || []);
           setWaffoMinTopUp(data.waffo_min_topup || 1);
@@ -801,6 +940,14 @@ const TopUp = () => {
   }, [statusState?.status]);
 
   const renderAmount = () => {
+    if (isNowPaymentsPayWay(payWay)) {
+      const payAmount = nowPaymentsEstimate?.pay_amount;
+      const payCurrency = nowPaymentsEstimate?.pay_currency?.toUpperCase();
+      if (payAmount && payCurrency) {
+        return `${payAmount} ${payCurrency}`;
+      }
+      return t('NOWPayments 结账页实时计算');
+    }
     return amount + ' ' + t('元');
   };
 
@@ -816,6 +963,7 @@ const TopUp = () => {
       if (res !== undefined) {
         const { message, data } = res.data;
         if (message === 'success') {
+          setNowPaymentsEstimate(null);
           setAmount(parseFloat(data));
         } else {
           setAmount(0);
@@ -842,6 +990,7 @@ const TopUp = () => {
       if (res !== undefined) {
         const { message, data } = res.data;
         if (message === 'success') {
+          setNowPaymentsEstimate(null);
           setAmount(parseFloat(data));
         } else {
           setAmount(0);
@@ -886,6 +1035,7 @@ const TopUp = () => {
     // 计算实际支付金额，考虑折扣
     const discount = preset.discount || topupInfo.discount[preset.value] || 1.0;
     const discountedAmount = preset.value * priceRatio * discount;
+    setNowPaymentsEstimate(null);
     setAmount(discountedAmount);
   };
 
@@ -930,6 +1080,7 @@ const TopUp = () => {
         renderAmount={renderAmount}
         payWay={payWay}
         payMethods={confirmPayMethods}
+        nowPaymentsEstimate={nowPaymentsEstimate}
         amountNumber={amount}
         discountRate={topupInfo?.discount?.[topUpCount] || 1.0}
       />
@@ -975,6 +1126,8 @@ const TopUp = () => {
           t={t}
           enableOnlineTopUp={enableOnlineTopUp}
           enableStripeTopUp={enableStripeTopUp}
+          enableNowPaymentsTopUp={enableNowPaymentsTopUp}
+          nowPaymentsMinTopUp={nowPaymentsMinTopUp}
           enableCreemTopUp={enableCreemTopUp}
           creemProducts={creemProducts}
           creemPreTopUp={creemPreTopUp}

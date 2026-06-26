@@ -34,7 +34,15 @@ export interface ApiResponse<T = unknown> {
  */
 export type TopupInfoResponse = ApiResponse<TopupInfo>
 export type RedemptionResponse = ApiResponse<number>
-export type AmountResponse = ApiResponse<string>
+export interface NowPaymentsAmountEstimate {
+  price_amount?: string
+  price_currency?: string
+  pay_amount?: string
+  pay_currency?: string
+  estimated?: boolean
+  estimate_message?: string
+}
+export type AmountResponse = ApiResponse<string | NowPaymentsAmountEstimate>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
@@ -42,6 +50,7 @@ export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
+export type NowPaymentsPaymentResponse = ApiResponse<{ payment_url?: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string
 >
@@ -140,6 +149,12 @@ export interface TopupInfo {
   enable_creem_topup?: boolean
   /** Available Creem products */
   creem_products?: CreemProduct[]
+  /** Whether NOWPayments topup is enabled */
+  enable_nowpayments_topup?: boolean
+  /** Minimum topup amount for NOWPayments */
+  nowpayments_min_topup?: number
+  /** Allowed NOWPayments crypto currency codes */
+  nowpayments_currencies?: string[]
   /** Whether Waffo topup is enabled */
   enable_waffo_topup?: boolean
   /** Available Waffo payment methods */
@@ -205,11 +220,23 @@ export interface WaffoPancakePaymentRequest {
 }
 
 /**
+ * NOWPayments payment request parameters
+ */
+export interface NowPaymentsPaymentRequest {
+  /** Topup amount */
+  amount: number
+  /** NOWPayments crypto currency code */
+  pay_currency?: string
+}
+
+/**
  * Amount calculation request
  */
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
+  /** Optional provider-specific pay currency */
+  pay_currency?: string
 }
 
 /**

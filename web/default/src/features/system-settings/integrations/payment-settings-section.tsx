@@ -157,6 +157,12 @@ const paymentSchema = z.object({
       })
     }
   }),
+  NowPaymentsEnabled: z.boolean(),
+  NowPaymentsApiKey: z.string(),
+  NowPaymentsIPNSecret: z.string(),
+  NowPaymentsCurrency: z.string(),
+  NowPaymentsCurrencies: z.string(),
+  NowPaymentsMinTopUp: z.coerce.number().min(0),
   WaffoEnabled: z.boolean(),
   WaffoApiKey: z.string(),
   WaffoPrivateKey: z.string(),
@@ -435,6 +441,15 @@ export function PaymentSettingsSection({
       CreemWebhookSecret: values.CreemWebhookSecret.trim(),
       CreemTestMode: values.CreemTestMode,
       CreemProducts: values.CreemProducts.trim(),
+      NowPaymentsEnabled: values.NowPaymentsEnabled,
+      NowPaymentsApiKey: values.NowPaymentsApiKey.trim(),
+      NowPaymentsIPNSecret: values.NowPaymentsIPNSecret.trim(),
+      NowPaymentsCurrency: values.NowPaymentsCurrency.trim().toLowerCase() || 'usdtbsc',
+      NowPaymentsCurrencies: values.NowPaymentsCurrencies.split(',')
+        .map((currency) => currency.trim().toLowerCase())
+        .filter(Boolean)
+        .join(',') || 'usdtbsc',
+      NowPaymentsMinTopUp: values.NowPaymentsMinTopUp,
       WaffoEnabled: values.WaffoEnabled,
       WaffoSandbox: values.WaffoSandbox,
       WaffoMerchantId: values.WaffoMerchantId.trim(),
@@ -480,6 +495,15 @@ export function PaymentSettingsSection({
       CreemWebhookSecret: initialRef.current.CreemWebhookSecret.trim(),
       CreemTestMode: initialRef.current.CreemTestMode,
       CreemProducts: initialRef.current.CreemProducts.trim(),
+      NowPaymentsEnabled: initialRef.current.NowPaymentsEnabled,
+      NowPaymentsApiKey: initialRef.current.NowPaymentsApiKey.trim(),
+      NowPaymentsIPNSecret: initialRef.current.NowPaymentsIPNSecret.trim(),
+      NowPaymentsCurrency: initialRef.current.NowPaymentsCurrency.trim().toLowerCase() || 'usdtbsc',
+      NowPaymentsCurrencies: initialRef.current.NowPaymentsCurrencies.split(',')
+        .map((currency) => currency.trim().toLowerCase())
+        .filter(Boolean)
+        .join(',') || 'usdtbsc',
+      NowPaymentsMinTopUp: initialRef.current.NowPaymentsMinTopUp,
       WaffoEnabled: initialRef.current.WaffoEnabled,
       WaffoSandbox: initialRef.current.WaffoSandbox,
       WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
@@ -625,6 +649,54 @@ export function PaymentSettingsSection({
       normalizeJsonForComparison(initial.CreemProducts)
     ) {
       updates.push({ key: 'CreemProducts', value: sanitized.CreemProducts })
+    }
+
+    if (sanitized.NowPaymentsEnabled !== initial.NowPaymentsEnabled) {
+      updates.push({
+        key: 'NowPaymentsEnabled',
+        value: sanitized.NowPaymentsEnabled,
+      })
+    }
+
+    if (
+      sanitized.NowPaymentsApiKey &&
+      sanitized.NowPaymentsApiKey !== initial.NowPaymentsApiKey
+    ) {
+      updates.push({
+        key: 'NowPaymentsApiKey',
+        value: sanitized.NowPaymentsApiKey,
+      })
+    }
+
+    if (
+      sanitized.NowPaymentsIPNSecret &&
+      sanitized.NowPaymentsIPNSecret !== initial.NowPaymentsIPNSecret
+    ) {
+      updates.push({
+        key: 'NowPaymentsIPNSecret',
+        value: sanitized.NowPaymentsIPNSecret,
+      })
+    }
+
+    if (sanitized.NowPaymentsCurrency !== initial.NowPaymentsCurrency) {
+      updates.push({
+        key: 'NowPaymentsCurrency',
+        value: sanitized.NowPaymentsCurrency,
+      })
+    }
+
+    if (sanitized.NowPaymentsCurrencies !== initial.NowPaymentsCurrencies) {
+      updates.push({
+        key: 'NowPaymentsCurrencies',
+        value: sanitized.NowPaymentsCurrencies,
+      })
+    }
+
+    if (sanitized.NowPaymentsMinTopUp !== initial.NowPaymentsMinTopUp) {
+      updates.push({
+        key: 'NowPaymentsMinTopUp',
+        value: sanitized.NowPaymentsMinTopUp,
+      })
     }
 
     if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
@@ -874,12 +946,13 @@ export function PaymentSettingsSection({
             saveLabel='Save all settings'
           />
           <Tabs defaultValue='general' className='min-w-0'>
-            <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
+            <div className='pb-1'>
+              <TabsList className='flex h-auto flex-wrap justify-start gap-1'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
+                <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
                 <TabsTrigger value='waffo'>Waffo</TabsTrigger>
               </TabsList>
@@ -1583,6 +1656,180 @@ export function PaymentSettingsSection({
                     </FormItem>
                   )}
                 />
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value='nowpayments'
+              className={paymentTabContentClassName}
+            >
+              <div className='space-y-4'>
+                <div>
+                  <h3 className='text-lg font-medium'>NOWPayments</h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t('Configuration for NOWPayments hosted checkout')}
+                  </p>
+                </div>
+
+                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
+                  <p className='mb-2 font-medium'>
+                    {t('Webhook Configuration:')}
+                  </p>
+                  <ul className='list-inside list-disc space-y-1'>
+                    <li>
+                      {t('Webhook URL:')}{' '}
+                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
+                        {'<ServerAddress>/api/nowpayments/callback'}
+                      </code>
+                    </li>
+                    <li>
+                      {t('Configure in your NOWPayments dashboard')}
+                    </li>
+                  </ul>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name='NowPaymentsEnabled'
+                  render={({ field }) => (
+                    <SettingsSwitchItem>
+                      <SettingsSwitchContent>
+                        <FormLabel>{t('Enable NOWPayments')}</FormLabel>
+                        <FormDescription>
+                          {t('Show NOWPayments as a dedicated wallet top-up option')}
+                        </FormDescription>
+                      </SettingsSwitchContent>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </SettingsSwitchItem>
+                  )}
+                />
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsApiKey'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('API key')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            placeholder={t('Enter NOWPayments API key')}
+                            autoComplete='new-password'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Leave blank unless updating the API key')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsIPNSecret'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('IPN secret')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            placeholder={t('Enter NOWPayments IPN secret')}
+                            autoComplete='new-password'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Leave blank unless updating the IPN secret')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsCurrency'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Pay currency')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder='usdtbsc'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value.toLowerCase())
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('NOWPayments crypto currency code used for checkout, for example usdtbsc')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsCurrencies'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Allowed pay currencies')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder='usdtbsc,eth,bnbbsc'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value.toLowerCase())
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Comma-separated NOWPayments crypto currency codes users can choose from, for example usdtbsc,eth,bnbbsc')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsMinTopUp'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='0.01'
+                            min={0}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Minimum recharge amount for NOWPayments')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
             </TabsContent>
 

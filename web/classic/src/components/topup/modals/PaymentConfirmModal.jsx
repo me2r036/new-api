@@ -36,12 +36,20 @@ const PaymentConfirmModal = ({
   renderAmount,
   payWay,
   payMethods,
+  nowPaymentsEstimate,
   // 新增：用于显示折扣明细
   amountNumber,
   discountRate,
 }) => {
+  const isNowPayments =
+    payWay === 'nowpayments' ||
+    (typeof payWay === 'string' && payWay.startsWith('nowpayments:'));
   const hasDiscount =
-    discountRate && discountRate > 0 && discountRate < 1 && amountNumber > 0;
+    !isNowPayments &&
+    discountRate &&
+    discountRate > 0 &&
+    discountRate < 1 &&
+    amountNumber > 0;
   const originalAmount = hasDiscount ? amountNumber / discountRate : 0;
   const discountAmount = hasDiscount ? originalAmount - amountNumber : 0;
   return (
@@ -90,6 +98,16 @@ const PaymentConfirmModal = ({
                 </div>
               )}
             </div>
+            {isNowPayments && !amountLoading && (
+              <div className='text-xs text-slate-500 dark:text-slate-400'>
+                {nowPaymentsEstimate?.price_amount
+                  ? `${t('订单价格')}：$${nowPaymentsEstimate.price_amount} USD。`
+                  : ''}
+                {t(
+                  'NOWPayments 使用实时加密货币估价，最终支付数量以托管结账页为准。',
+                )}
+              </div>
+            )}
             {hasDiscount && !amountLoading && (
               <>
                 <div className='flex justify-between items-center'>

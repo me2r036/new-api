@@ -99,6 +99,8 @@ func GetTopUpInfo(c *gin.Context) {
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
+		"enable_nowpayments_topup":         isNowPaymentsTopUpEnabled(),
+		"nowpayments_currencies":           service.GetNowPaymentsCurrencies(),
 		"enable_waffo_topup":               enableWaffo,
 		"enable_waffo_pancake_topup":       enableWaffoPancake,
 		"enable_redemption":                complianceConfirmed,
@@ -114,6 +116,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"pay_methods":             payMethods,
 		"min_topup":               operation_setting.MinTopUp,
 		"stripe_min_topup":        setting.StripeMinTopUp,
+		"nowpayments_min_topup":   setting.NowPaymentsMinTopUp,
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
@@ -147,6 +150,17 @@ func GetEpayClient() *epay.Client {
 }
 
 func getPayMoney(amount int64, group string) float64 {
+	return getPayMoneyWithPrice(amount, group, operation_setting.Price)
+}
+
+// getNowPaymentsPayMoney computes the NOWPayments invoice amount in USD.
+// operation_setting.Price is the CNY price per unit; NOWPayments charges in USD,
+// so it uses a fixed USD price of 1 per unit instead of the CNY price ratio.
+func getNowPaymentsPayMoney(amount int64, group string) float64 {
+	return getPayMoneyWithPrice(amount, group, 1)
+}
+
+func getPayMoneyWithPrice(amount int64, group string, price float64) float64 {
 	dAmount := decimal.NewFromInt(amount)
 	// 充值金额以“展示类型”为准：
 	// - USD/CNY: 前端传 amount 为金额单位；TOKENS: 前端传 tokens，需要换成 USD 金额
@@ -161,7 +175,7 @@ func getPayMoney(amount int64, group string) float64 {
 	}
 
 	dTopupGroupRatio := decimal.NewFromFloat(topupGroupRatio)
-	dPrice := decimal.NewFromFloat(operation_setting.Price)
+	dPrice := decimal.NewFromFloat(price)
 	// apply optional preset discount by the original request amount (if configured), default 1.0
 	discount := 1.0
 	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(amount)]; ok {

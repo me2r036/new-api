@@ -21,13 +21,16 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 import {
   calculateAmount,
+  calculateNowPaymentsAmount,
   calculateStripeAmount,
   calculateWaffoPancakeAmount,
   requestPayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
+import type { NowPaymentsAmountEstimate } from '../types'
 import {
+  isNowPaymentsPayment,
   isStripePayment,
   isWaffoPancakePayment,
   submitPaymentForm,
@@ -39,33 +42,63 @@ import {
 
 export function usePayment() {
   const [amount, setAmount] = useState<number>(0)
+  const [nowPaymentsEstimate, setNowPaymentsEstimate] =
+    useState<NowPaymentsAmountEstimate | null>(null)
   const [calculating, setCalculating] = useState(false)
   const [processing, setProcessing] = useState(false)
 
   // Calculate payment amount
   const calculatePaymentAmount = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (topupAmount: number, paymentType: string, payCurrency?: string) => {
       try {
         setCalculating(true)
 
         const isStripe = isStripePayment(paymentType)
+        const isNowPayments = isNowPaymentsPayment(paymentType)
         const isPancake = isWaffoPancakePayment(paymentType)
+        const resolvedNowPaymentsCurrency =
+          payCurrency ||
+          (paymentType.startsWith('nowpayments:')
+            ? paymentType.split(':')[1]
+            : undefined)
+        if (!isNowPayments) {
+          setNowPaymentsEstimate(null)
+        }
         const response = isStripe
           ? await calculateStripeAmount({ amount: topupAmount })
+          : isNowPayments
+            ? await calculateNowPaymentsAmount({
+                amount: topupAmount,
+                pay_currency: resolvedNowPaymentsCurrency,
+              })
           : isPancake
             ? await calculateWaffoPancakeAmount({ amount: topupAmount })
             : await calculateAmount({ amount: topupAmount })
 
         if (isApiSuccess(response) && response.data) {
-          const calculatedAmount = parseFloat(response.data)
+          if (isNowPayments && typeof response.data === 'object') {
+            setNowPaymentsEstimate(response.data)
+            const calculatedAmount = parseFloat(
+              response.data.pay_amount || response.data.price_amount || '0'
+            )
+            setAmount(calculatedAmount)
+            return calculatedAmount
+          }
+
+          setNowPaymentsEstimate(null)
+          const calculatedAmount = parseFloat(String(response.data))
           setAmount(calculatedAmount)
           return calculatedAmount
         }
 
         // Don't show error for calculation, just set to 0
+        if (isNowPayments) {
+          setNowPaymentsEstimate(null)
+        }
         setAmount(0)
         return 0
       } catch (_error) {
+        setNowPaymentsEstimate(null)
         setAmount(0)
         return 0
       } finally {
@@ -129,6 +162,7 @@ export function usePayment() {
 
   return {
     amount,
+    nowPaymentsEstimate,
     calculating,
     processing,
     calculatePaymentAmount,

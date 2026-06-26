@@ -57,6 +57,8 @@ const RechargeCard = ({
   t,
   enableOnlineTopUp,
   enableStripeTopUp,
+  enableNowPaymentsTopUp,
+  nowPaymentsMinTopUp,
   enableCreemTopUp,
   creemProducts,
   creemPreTopUp,
@@ -107,7 +109,15 @@ const RechargeCard = ({
   const [activeTab, setActiveTab] = useState('topup');
   const shouldShowSubscription =
     !subscriptionLoading && subscriptionPlans.length > 0;
-  const regularPayMethods = payMethods || [];
+  const getPaymentPriority = (method) => {
+    if (method.type === 'stripe' || method.type?.startsWith('custom')) return 1;
+    if (method.type === 'alipay') return 2;
+    if (method.type === 'wxpay') return 3;
+    return 4;
+  };
+  const regularPayMethods = [...(payMethods || [])].sort(
+    (left, right) => getPaymentPriority(left) - getPaymentPriority(right),
+  );
 
   useEffect(() => {
     if (initialTabSetRef.current) return;
@@ -232,6 +242,7 @@ const RechargeCard = ({
           </div>
         ) : enableOnlineTopUp ||
           enableStripeTopUp ||
+          enableNowPaymentsTopUp ||
           enableCreemTopUp ||
           enableWaffoTopUp ||
           enableWaffoPancakeTopUp ? (
@@ -242,6 +253,7 @@ const RechargeCard = ({
             <div className='space-y-6'>
               {(enableOnlineTopUp ||
                 enableStripeTopUp ||
+                enableNowPaymentsTopUp ||
                 enableWaffoTopUp ||
                 enableWaffoPancakeTopUp) && (
                 <Row gutter={12}>
@@ -252,6 +264,7 @@ const RechargeCard = ({
                       disabled={
                         !enableOnlineTopUp &&
                         !enableStripeTopUp &&
+                        !enableNowPaymentsTopUp &&
                         !enableWaffoTopUp &&
                         !enableWaffoPancakeTopUp
                       }
@@ -306,14 +319,52 @@ const RechargeCard = ({
                       style={{ width: '100%' }}
                     />
                   </Col>
-                  {regularPayMethods.length > 0 && (
+                  {(regularPayMethods.length > 0 || enableNowPaymentsTopUp) && (
                     <Col xs={24} sm={24} md={24} lg={14} xl={14}>
                       <Form.Slot label={t('选择支付方式')}>
-                        <Space wrap>
+                        <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2'>
+                          {enableNowPaymentsTopUp && (
+                            <Button
+                              theme='outline'
+                              type='tertiary'
+                              onClick={() =>
+                                preTopUp(
+                                  `nowpayments:${nowPaymentsCurrencies[0] || 'usdtbsc'}`,
+                                )
+                              }
+                              disabled={
+                                nowPaymentsMinTopUp > Number(topUpCount || 0)
+                              }
+                              loading={
+                                paymentLoading &&
+                                (payWay === 'nowpayments' ||
+                                  payWay.startsWith('nowpayments:'))
+                              }
+                              icon={
+                                <span
+                                  style={{
+                                    color: '#22C55E',
+                                    fontWeight: 700,
+                                    fontSize: 12,
+                                    lineHeight: '18px',
+                                  }}
+                                >
+                                  NP
+                                </span>
+                              }
+                              className='!rounded-lg !px-4 !py-2 w-full'
+                            >
+                              NOWPayments
+                            </Button>
+                          )}
                           {regularPayMethods.map((payMethod) => {
                             const minTopupVal =
                               Number(payMethod.min_topup) || 0;
                             const isStripe = payMethod.type === 'stripe';
+                            const isNowPayments =
+                              payMethod.type === 'nowpayments' ||
+                              (typeof payMethod.type === 'string' &&
+                                payMethod.type.startsWith('nowpayments:'));
                             const isWaffo =
                               typeof payMethod.type === 'string' &&
                               payMethod.type.startsWith('waffo:');
@@ -322,9 +373,11 @@ const RechargeCard = ({
                             const disabled =
                               (!enableOnlineTopUp &&
                                 !isStripe &&
+                                !isNowPayments &&
                                 !isWaffo &&
                                 !isWaffoPancake) ||
                               (!enableStripeTopUp && isStripe) ||
+                              (!enableNowPaymentsTopUp && isNowPayments) ||
                               (!enableWaffoTopUp && isWaffo) ||
                               (!enableWaffoPancakeTopUp && isWaffoPancake) ||
                               minTopupVal > Number(topUpCount || 0);
@@ -346,6 +399,17 @@ const RechargeCard = ({
                                     <SiWechat size={18} color='#07C160' />
                                   ) : payMethod.type === 'stripe' ? (
                                     <SiStripe size={18} color='#635BFF' />
+                                  ) : isNowPayments ? (
+                                    <span
+                                      style={{
+                                        color: '#22C55E',
+                                        fontWeight: 700,
+                                        fontSize: 12,
+                                        lineHeight: '18px',
+                                      }}
+                                    >
+                                      NP
+                                    </span>
                                   ) : payMethod.icon ? (
                                     <img
                                       src={payMethod.icon}
@@ -380,7 +444,7 @@ const RechargeCard = ({
                                     />
                                   )
                                 }
-                                className='!rounded-lg !px-4 !py-2'
+                                className='!rounded-lg !px-4 !py-2 w-full'
                               >
                                 {payMethod.name}
                               </Button>
@@ -404,14 +468,17 @@ const RechargeCard = ({
                               </React.Fragment>
                             );
                           })}
-                        </Space>
+                        </div>
                       </Form.Slot>
                     </Col>
                   )}
                 </Row>
               )}
 
-              {(enableOnlineTopUp || enableStripeTopUp || enableWaffoTopUp) && (
+              {(enableOnlineTopUp ||
+                enableStripeTopUp ||
+                enableNowPaymentsTopUp ||
+                enableWaffoTopUp) && (
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>
@@ -535,6 +602,18 @@ const RechargeCard = ({
                     })}
                   </div>
                 </Form.Slot>
+              )}
+
+              {enableNowPaymentsTopUp && (
+                <div
+                  style={{
+                    color: 'var(--semi-color-text-2)',
+                    fontSize: '12px',
+                    marginTop: '-8px',
+                  }}
+                >
+                  {t('NOWPayments 使用托管加密货币结账页，最低充值')} {nowPaymentsMinTopUp}
+                </div>
               )}
 
               {/* Creem 充值区域 */}

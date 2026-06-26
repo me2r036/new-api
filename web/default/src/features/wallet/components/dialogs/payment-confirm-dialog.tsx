@@ -32,7 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
-import type { PaymentMethod } from '../../types'
+import type { NowPaymentsAmountEstimate, PaymentMethod } from '../../types'
 
 interface PaymentConfirmDialogProps {
   open: boolean
@@ -40,6 +40,7 @@ interface PaymentConfirmDialogProps {
   onConfirm: () => void
   topupAmount: number
   paymentAmount: number
+  nowPaymentsEstimate?: NowPaymentsAmountEstimate | null
   paymentMethod: PaymentMethod | undefined
   calculating: boolean
   processing: boolean
@@ -53,6 +54,7 @@ export function PaymentConfirmDialog({
   onConfirm,
   topupAmount,
   paymentAmount,
+  nowPaymentsEstimate,
   paymentMethod,
   calculating,
   processing,
@@ -63,6 +65,10 @@ export function PaymentConfirmDialog({
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const isNowPayments = paymentMethod?.type?.startsWith('nowpayments')
+  const nowPaymentsPayAmount = nowPaymentsEstimate?.pay_amount
+  const nowPaymentsPayCurrency = nowPaymentsEstimate?.pay_currency?.toUpperCase()
+  const nowPaymentsPriceAmount = nowPaymentsEstimate?.price_amount
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -82,11 +88,14 @@ export function PaymentConfirmDialog({
               {t('Topup Amount')}
             </span>
             <span className='text-lg font-semibold'>
-              {formatLocalCurrencyAmount(topupAmount * usdExchangeRate, {
-                digitsLarge: 2,
-                digitsSmall: 2,
-                abbreviate: false,
-              })}
+              {formatLocalCurrencyAmount(
+                topupAmount * (isNowPayments ? 1 : usdExchangeRate),
+                {
+                  digitsLarge: 2,
+                  digitsSmall: 2,
+                  abbreviate: false,
+                }
+              )}
             </span>
           </div>
 
@@ -96,6 +105,21 @@ export function PaymentConfirmDialog({
             </span>
             {calculating ? (
               <Skeleton className='h-6 w-24' />
+            ) : isNowPayments ? (
+              <div className='text-right'>
+                <div className='text-2xl font-semibold'>
+                  {nowPaymentsPayAmount && nowPaymentsPayCurrency
+                    ? `${nowPaymentsPayAmount} ${nowPaymentsPayCurrency}`
+                    : t('Calculated by NOWPayments')}
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  {nowPaymentsPriceAmount
+                    ? t('Invoice price: ${{amount}} USD', {
+                        amount: nowPaymentsPriceAmount,
+                      })
+                    : t('Live crypto amount is confirmed on the checkout page')}
+                </div>
+              </div>
             ) : (
               <div className='flex items-baseline gap-2'>
                 <span className='text-2xl font-semibold'>
@@ -110,7 +134,15 @@ export function PaymentConfirmDialog({
             )}
           </div>
 
-          {hasDiscount && !calculating && (
+          {isNowPayments && !calculating && (
+            <div className='text-muted-foreground bg-muted/50 rounded-lg p-3 text-xs'>
+              {t(
+                'NOWPayments uses a live crypto estimate here. The final amount can change slightly and is confirmed on the hosted checkout page.'
+              )}
+            </div>
+          )}
+
+          {hasDiscount && !calculating && !isNowPayments && (
             <div className='bg-muted/50 rounded-lg p-3'>
               <div className='flex items-center justify-between text-sm'>
                 <span className='text-muted-foreground'>{t('You save')}</span>

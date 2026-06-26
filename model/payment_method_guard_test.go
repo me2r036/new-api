@@ -66,6 +66,22 @@ func insertTopUpForPaymentGuardTest(t *testing.T, tradeNo string, userID int, pa
 	require.NoError(t, topUp.Insert())
 }
 
+func insertNowPaymentsTopUpForPaymentGuardTest(t *testing.T, tradeNo string, userID int, payCurrency string) {
+	t.Helper()
+	topUp := &TopUp{
+		UserId:          userID,
+		Amount:          2,
+		Money:           9.99,
+		TradeNo:         tradeNo,
+		PaymentMethod:   PaymentMethodNowPayments,
+		PaymentProvider: PaymentProviderNowPayments,
+		PayCurrency:     payCurrency,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}
+	require.NoError(t, topUp.Insert())
+}
+
 func getTopUpStatusForPaymentGuardTest(t *testing.T, tradeNo string) string {
 	t.Helper()
 	topUp := GetTopUpByTradeNo(tradeNo)
@@ -100,6 +116,113 @@ func TestRechargeWaffoPancake_RejectsMismatchedPaymentMethod(t *testing.T) {
 	require.NotNil(t, topUp)
 	assert.Equal(t, common.TopUpStatusPending, topUp.Status)
 	assert.Equal(t, 0, getUserQuotaForPaymentGuardTest(t, 101))
+}
+
+func TestCompleteNowPaymentsTopUp_IsIdempotent(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 102, 0)
+	insertTopUpForPaymentGuardTest(t, "nowpayments-guard", 102, PaymentProviderNowPayments)
+
+	require.NoError(t, CompleteNowPaymentsTopUp("nowpayments-guard", "127.0.0.1", 9.99, "usd", "usdtbsc", "usdtbsc"))
+	require.NoError(t, CompleteNowPaymentsTopUp("nowpayments-guard", "127.0.0.1", 9.99, "usd", "usdtbsc", "usdtbsc"))
+
+	topUp := GetTopUpByTradeNo("nowpayments-guard")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, int(2*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 102))
+}
+
+func TestCompleteNowPaymentsTopUp_RejectsMismatchedAmountAndCurrency(t *testing.T) {
+	testCases := []struct {
+		name          string
+		priceAmount   float64
+		priceCurrency string
+		payCurrency   string
+	}{
+		{
+			name:          "underpaid amount",
+			priceAmount:   9.98,
+			priceCurrency: "usd",
+			payCurrency:   "usdtbsc",
+		},
+		{
+			name:          "wrong fiat currency",
+			priceAmount:   9.99,
+			priceCurrency: "eur",
+			payCurrency:   "usdtbsc",
+		},
+		{
+			name:          "missing pay currency",
+			priceAmount:   9.99,
+			priceCurrency: "usd",
+			payCurrency:   "",
+		},
+		{
+			name:          "wrong pay currency",
+			priceAmount:   9.99,
+			priceCurrency: "usd",
+			payCurrency:   "usdterc20",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateTables(t)
+			insertUserForPaymentGuardTest(t, 103, 0)
+			insertTopUpForPaymentGuardTest(t, "nowpayments-mismatch", 103, PaymentProviderNowPayments)
+
+			err := CompleteNowPaymentsTopUp("nowpayments-mismatch", "127.0.0.1", tc.priceAmount, tc.priceCurrency, tc.payCurrency, "usdtbsc")
+			require.Error(t, err)
+
+			topUp := GetTopUpByTradeNo("nowpayments-mismatch")
+			require.NotNil(t, topUp)
+			assert.Equal(t, common.TopUpStatusPending, topUp.Status)
+			assert.Equal(t, 0, getUserQuotaForPaymentGuardTest(t, 103))
+		})
+	}
+}
+
+func TestCompleteNowPaymentsTopUp_UsesStoredPayCurrency(t *testing.T) {
+	t.Run("stored currency overrides stale expected currency", func(t *testing.T) {
+		truncateTables(t)
+		insertUserForPaymentGuardTest(t, 104, 0)
+		insertNowPaymentsTopUpForPaymentGuardTest(t, "nowpayments-stored-currency", 104, "eth")
+
+		require.NoError(t, CompleteNowPaymentsTopUp("nowpayments-stored-currency", "127.0.0.1", 9.99, "usd", "eth", "usdtbsc"))
+
+		topUp := GetTopUpByTradeNo("nowpayments-stored-currency")
+		require.NotNil(t, topUp)
+		assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+		assert.Equal(t, int(2*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 104))
+	})
+
+	t.Run("stored currency rejects mismatched webhook currency", func(t *testing.T) {
+		truncateTables(t)
+		insertUserForPaymentGuardTest(t, 105, 0)
+		insertNowPaymentsTopUpForPaymentGuardTest(t, "nowpayments-stored-mismatch", 105, "eth")
+
+		err := CompleteNowPaymentsTopUp("nowpayments-stored-mismatch", "127.0.0.1", 9.99, "usd", "bnbbsc", "bnbbsc")
+		require.Error(t, err)
+
+		topUp := GetTopUpByTradeNo("nowpayments-stored-mismatch")
+		require.NotNil(t, topUp)
+		assert.Equal(t, common.TopUpStatusPending, topUp.Status)
+		assert.Equal(t, 0, getUserQuotaForPaymentGuardTest(t, 105))
+	})
+
+	t.Run("legacy empty stored currency uses explicit expected currency", func(t *testing.T) {
+		truncateTables(t)
+		insertUserForPaymentGuardTest(t, 106, 0)
+		insertTopUpForPaymentGuardTest(t, "nowpayments-legacy-currency", 106, PaymentProviderNowPayments)
+
+		require.NoError(t, CompleteNowPaymentsTopUp("nowpayments-legacy-currency", "127.0.0.1", 9.99, "usd", "bnbbsc", "bnbbsc"))
+
+		topUp := GetTopUpByTradeNo("nowpayments-legacy-currency")
+		require.NotNil(t, topUp)
+		assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+		assert.Equal(t, int(2*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 106))
+	})
 }
 
 func TestUpdatePendingTopUpStatus_RejectsMismatchedPaymentProvider(t *testing.T) {

@@ -124,6 +124,16 @@ export function getPaymentIcon(
           style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.CREEM] }}
         />
       )
+    case PAYMENT_TYPES.NOWPAYMENTS:
+      return (
+        <span
+          className={`inline-flex items-center justify-center font-semibold leading-none ${className}`}
+          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.NOWPAYMENTS] }}
+          aria-label={i18next.t('NOWPayments')}
+        >
+          NP
+        </span>
+      )
     case PAYMENT_TYPES.WAFFO:
       return (
         <CreditCard

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatNumber } from '@/lib/format'
@@ -26,6 +26,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
@@ -47,6 +54,7 @@ import type {
   TopupInfo,
   CreemProduct,
   WaffoPayMethod,
+  NowPaymentsAmountEstimate,
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
 
@@ -58,6 +66,7 @@ interface RechargeFormCardProps {
   topupAmount: number
   onTopupAmountChange: (amount: number) => void
   paymentAmount: number
+  nowPaymentsEstimate?: NowPaymentsAmountEstimate | null
   calculating: boolean
   onPaymentMethodSelect: (method: PaymentMethod) => void
   paymentLoading: string | null
@@ -78,6 +87,12 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
+  enableNowPaymentsTopup?: boolean
+  nowPaymentsMinTopup?: number
+  nowPaymentsCurrencies?: string[]
+  selectedNowPaymentsCurrency?: string
+  onNowPaymentsCurrencyChange?: (currency: string) => void
+  onNowPaymentsSelect?: () => void
 }
 
 export function RechargeFormCard({
@@ -88,6 +103,7 @@ export function RechargeFormCard({
   topupAmount,
   onTopupAmountChange,
   paymentAmount,
+  nowPaymentsEstimate,
   calculating,
   onPaymentMethodSelect,
   paymentLoading,
@@ -108,6 +124,12 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
+  enableNowPaymentsTopup,
+  nowPaymentsMinTopup,
+  nowPaymentsCurrencies,
+  selectedNowPaymentsCurrency,
+  onNowPaymentsCurrencyChange,
+  onNowPaymentsSelect,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -127,6 +149,7 @@ export function RechargeFormCard({
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
+    enableNowPaymentsTopup ||
     enableWaffoTopup ||
     enableWaffoPancakeTopup
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
@@ -134,8 +157,42 @@ export function RechargeFormCard({
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
+  const nowPaymentsBelowMin = (nowPaymentsMinTopup || 0) > topupAmount
+  const nowPaymentsDisabledReason = nowPaymentsBelowMin
+    ? t('Minimum topup amount: {{amount}}', {
+        amount: nowPaymentsMinTopup || 0,
+      })
+    : undefined
+  const nowPaymentsDisabledLabel = nowPaymentsBelowMin
+    ? `${t('Minimum:')} ${nowPaymentsMinTopup || 0}`
+    : selectedNowPaymentsCurrency?.toUpperCase() || t('Crypto checkout')
+  const allowedNowPaymentsCurrencies =
+    nowPaymentsCurrencies && nowPaymentsCurrencies.length > 0
+      ? nowPaymentsCurrencies
+      : ['usdtbsc']
+  const orderedPayMethods = [...(topupInfo?.pay_methods || [])].sort(
+    (left, right) => {
+      const getPriority = (method: PaymentMethod) => {
+        if (method.type === 'stripe' || method.type.startsWith('custom')) return 1
+        if (method.type === 'alipay') return 2
+        if (method.type === 'wxpay') return 3
+        return 4
+      }
+
+      return getPriority(left) - getPriority(right)
+    }
+  )
   const minTopup = getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
+  const nowPaymentsPayAmount = nowPaymentsEstimate?.pay_amount
+  const nowPaymentsPayCurrency = nowPaymentsEstimate?.pay_currency?.toUpperCase()
+  const paymentMethodColumns = Math.max(
+    orderedPayMethods.length + (enableNowPaymentsTopup && onNowPaymentsSelect ? 1 : 0),
+    1
+  )
+  const paymentMethodGridStyle = {
+    '--payment-method-columns': paymentMethodColumns,
+  } as CSSProperties
 
   if (loading) {
     return (
@@ -295,6 +352,10 @@ export function RechargeFormCard({
                     </span>
                     {calculating ? (
                       <Skeleton className='h-5 w-16' />
+                    ) : nowPaymentsPayAmount && nowPaymentsPayCurrency ? (
+                      <span className='text-sm font-semibold'>
+                        {nowPaymentsPayAmount} {nowPaymentsPayCurrency}
+                      </span>
                     ) : (
                       <span className='text-sm font-semibold'>
                         {formatCurrency(paymentAmount)}
@@ -308,9 +369,88 @@ export function RechargeFormCard({
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                   {t('Payment Method')}
                 </Label>
-                {hasStandardPaymentMethods ? (
-                  <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
-                    {topupInfo?.pay_methods?.map((method) => {
+                {enableNowPaymentsTopup && onNowPaymentsCurrencyChange && (
+                  <div
+                    className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:[grid-template-columns:repeat(var(--payment-method-columns),minmax(0,1fr))]'
+                    style={paymentMethodGridStyle}
+                  >
+                    <div className='grid min-h-14 min-w-0 gap-1 rounded-lg border bg-muted/20 px-3 py-2'>
+                      <Label className='text-muted-foreground truncate text-[11px] leading-4 font-normal'>
+                        {t('NOWPayments currency')}
+                      </Label>
+                      <Select
+                        value={
+                          selectedNowPaymentsCurrency ||
+                          allowedNowPaymentsCurrencies[0]
+                        }
+                        onValueChange={(currency) => {
+                          if (currency) onNowPaymentsCurrencyChange(currency)
+                        }}
+                      >
+                        <SelectTrigger className='h-8 min-w-0'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allowedNowPaymentsCurrencies.map((currency) => (
+                            <SelectItem key={currency} value={currency}>
+                              {currency.toUpperCase()}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+                {hasStandardPaymentMethods || enableNowPaymentsTopup ? (
+                  <div
+                    className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:[grid-template-columns:repeat(var(--payment-method-columns),minmax(0,1fr))]'
+                    style={paymentMethodGridStyle}
+                  >
+                    {enableNowPaymentsTopup && onNowPaymentsSelect && (() => {
+                      const button = (
+                        <Button
+                          variant='outline'
+                          onClick={onNowPaymentsSelect}
+                          disabled={nowPaymentsBelowMin || !!paymentLoading}
+                          title={nowPaymentsDisabledReason}
+                          aria-label={
+                            nowPaymentsDisabledReason
+                              ? `${t('NOWPayments')}. ${nowPaymentsDisabledReason}`
+                              : t('NOWPayments')
+                          }
+                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                        >
+                          {paymentLoading === 'nowpayments' ? (
+                            <Loader2 className='h-4 w-4 animate-spin' />
+                          ) : (
+                            getPaymentIcon('nowpayments', 'h-4 w-4')
+                          )}
+                          <span className='flex min-w-0 flex-col items-start gap-0.5'>
+                            <span className='max-w-full truncate'>
+                              {t('NOWPayments')}
+                            </span>
+                            <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
+                              {nowPaymentsDisabledLabel}
+                            </span>
+                          </span>
+                        </Button>
+                      )
+
+                      return nowPaymentsBelowMin ? (
+                        <TooltipProvider key='nowpayments'>
+                          <Tooltip>
+                            <TooltipTrigger render={button}></TooltipTrigger>
+                            <TooltipContent>
+                              {nowPaymentsDisabledReason}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        button
+                      )
+                    })()}
+
+                    {orderedPayMethods.map((method) => {
                       const minTopup = method.min_topup || 0
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled
@@ -370,6 +510,7 @@ export function RechargeFormCard({
                         button
                       )
                     })}
+
                   </div>
                 ) : hasWaffoPaymentMethods ? null : (
                   <Alert>
@@ -389,7 +530,7 @@ export function RechargeFormCard({
                     <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                       {t('Waffo Payment')}
                     </Label>
-                    <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
+                    <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]'>
                       {waffoPayMethods?.map((method, index) => {
                         const loadingKey = `waffo-${index}`
                         const waffoMin = waffoMinTopup || 0
@@ -455,6 +596,12 @@ export function RechargeFormCard({
                     </div>
                   </div>
                 )}
+
+              {enableNowPaymentsTopup && (
+                <p className='text-muted-foreground text-xs'>
+                  {t('NOWPayments opens a hosted crypto checkout.')}
+                </p>
+              )}
             </>
           )}
         </div>

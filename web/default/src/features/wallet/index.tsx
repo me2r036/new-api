@@ -37,12 +37,14 @@ import {
   useAffiliate,
   useRedemption,
   useCreemPayment,
+  useNowPaymentsPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
 } from './hooks'
 import {
   getDefaultPaymentType,
   getMinTopupAmount,
+  isNowPaymentsPayment,
   isWaffoPancakePayment,
 } from './lib'
 import type {
@@ -73,6 +75,8 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [selectedNowPaymentsCurrency, setSelectedNowPaymentsCurrency] =
+    useState('usdtbsc')
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -86,6 +90,7 @@ export function Wallet(props: WalletProps) {
   }, [currency?.quotaDisplayType, currency?.usdExchangeRate])
   const {
     amount: paymentAmount,
+    nowPaymentsEstimate,
     calculating,
     processing,
     calculatePaymentAmount,
@@ -99,6 +104,8 @@ export function Wallet(props: WalletProps) {
   } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
   const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
+  const { processing: nowPaymentsProcessing, processNowPaymentsPayment } =
+    useNowPaymentsPayment()
   const { processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
@@ -142,6 +149,13 @@ export function Wallet(props: WalletProps) {
     }
   }, [topupInfo, topupAmount, calculatePaymentAmount])
 
+  useEffect(() => {
+    const currencies = topupInfo?.nowpayments_currencies || []
+    if (currencies.length > 0 && !currencies.includes(selectedNowPaymentsCurrency)) {
+      setSelectedNowPaymentsCurrency(currencies[0])
+    }
+  }, [selectedNowPaymentsCurrency, topupInfo?.nowpayments_currencies])
+
   // Get current payment type (selected or default)
   const getCurrentPaymentType = useCallback(() => {
     return selectedPaymentMethod?.type || getDefaultPaymentType(topupInfo)
@@ -174,7 +188,11 @@ export function Wallet(props: WalletProps) {
       }
 
       // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
+      await calculatePaymentAmount(
+        topupAmount,
+        method.type,
+        isNowPaymentsPayment(method.type) ? selectedNowPaymentsCurrency : undefined
+      )
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -186,8 +204,14 @@ export function Wallet(props: WalletProps) {
     if (!selectedPaymentMethod) return
 
     const isPancake = isWaffoPancakePayment(selectedPaymentMethod.type)
+    const isNowPayments = isNowPaymentsPayment(selectedPaymentMethod.type)
+    const nowPaymentsCurrency = selectedPaymentMethod.type.startsWith('nowpayments:')
+      ? selectedPaymentMethod.type.split(':')[1]
+      : selectedNowPaymentsCurrency
     const success = isPancake
       ? await processWaffoPancakePayment(topupAmount)
+      : isNowPayments
+        ? await processNowPaymentsPayment(topupAmount, nowPaymentsCurrency)
       : await processPayment(topupAmount, selectedPaymentMethod.type)
 
     if (success) {
@@ -245,6 +269,29 @@ export function Wallet(props: WalletProps) {
     }
   }
 
+  const handleNowPaymentsSelect = async () => {
+    const method: PaymentMethod = {
+      name: `NOWPayments ${selectedNowPaymentsCurrency.toUpperCase()}`,
+      type: `nowpayments:${selectedNowPaymentsCurrency}`,
+    }
+
+    setSelectedPaymentMethod(method)
+    setPaymentLoading(method.type)
+
+    try {
+      const minTopup = topupInfo?.nowpayments_min_topup || getMinTopupAmount(topupInfo)
+      if (topupAmount < minTopup) {
+        return
+      }
+
+      setSelectedNowPaymentsCurrency(selectedNowPaymentsCurrency)
+      await calculatePaymentAmount(topupAmount, method.type, selectedNowPaymentsCurrency)
+      setConfirmDialogOpen(true)
+    } finally {
+      setPaymentLoading(null)
+    }
+  }
+
   // Get discount rate for current topup amount
   const getDiscountRate = useCallback(() => {
     return topupInfo?.discount?.[topupAmount] || DEFAULT_DISCOUNT_RATE
@@ -281,6 +328,7 @@ export function Wallet(props: WalletProps) {
                   topupAmount={topupAmount}
                   onTopupAmountChange={handleTopupAmountChange}
                   paymentAmount={paymentAmount}
+                  nowPaymentsEstimate={nowPaymentsEstimate}
                   calculating={calculating}
                   onPaymentMethodSelect={handlePaymentMethodSelect}
                   paymentLoading={paymentLoading}
@@ -300,6 +348,17 @@ export function Wallet(props: WalletProps) {
                   waffoPayMethods={topupInfo?.waffo_pay_methods}
                   waffoMinTopup={topupInfo?.waffo_min_topup}
                   onWaffoMethodSelect={handleWaffoMethodSelect}
+                  enableNowPaymentsTopup={topupInfo?.enable_nowpayments_topup}
+                  nowPaymentsMinTopup={topupInfo?.nowpayments_min_topup}
+                  nowPaymentsCurrencies={topupInfo?.nowpayments_currencies}
+                  selectedNowPaymentsCurrency={selectedNowPaymentsCurrency}
+                  onNowPaymentsCurrencyChange={(currency) => {
+                    setSelectedNowPaymentsCurrency(currency)
+                    if (isNowPaymentsPayment(getCurrentPaymentType())) {
+                      calculatePaymentAmount(topupAmount, 'nowpayments', currency)
+                    }
+                  }}
+                  onNowPaymentsSelect={handleNowPaymentsSelect}
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
@@ -333,9 +392,10 @@ export function Wallet(props: WalletProps) {
         onConfirm={handlePaymentConfirm}
         topupAmount={topupAmount}
         paymentAmount={paymentAmount}
+        nowPaymentsEstimate={nowPaymentsEstimate}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
-        processing={processing || pancakeProcessing}
+        processing={processing || pancakeProcessing || nowPaymentsProcessing}
         discountRate={getDiscountRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
       />
